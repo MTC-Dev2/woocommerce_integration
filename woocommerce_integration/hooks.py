@@ -246,3 +246,4 @@ woocomm_custom_fields = {
 # auth_hooks = [
 # 	"woocommerce_integration.auth.validate"
 # ]
+
