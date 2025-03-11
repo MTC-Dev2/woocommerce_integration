@@ -59,6 +59,8 @@ def batch_sync_order():
     last_sync_datetime = None
     for order in get_woocommerce_orders():
         last_sync_datetime = order.get("date_modified")
+        # print(f">>>> order: {order} <<<")
+        
         create_sales_order(order, setup)
 
     if last_sync_datetime:

@@ -31,24 +31,23 @@ def create_update_customer(order_data: dict):
 
     # Customer could have been created manually which may differ in naming
     # always check woocomm_customer_id
-    if erp_customer := frappe.db.exists(
-        "Customer", {"woocomm_customer_id": customer_id}
-    ):
+    if erp_customer := frappe.db.exists("Customer", {"woocomm_customer_id": customer_id}):
         customer = frappe.get_doc("Customer", erp_customer)
     else:
         customer = frappe.new_doc("Customer")
         customer.name = customer_id
 
-    customer.customer_name = customer_name
-    customer.woocomm_customer_id = customer_id
-    customer.flags.ignore_mandatory = True
-    customer.save()
+        customer.customer_name = customer_name
+        customer.woocomm_customer_id = customer_id
+        customer.flags.ignore_mandatory = True
+        customer.save()
 
     # Create address/contact if does not exist
-    create_address(billing_data, customer, "Billing")
-    create_address(order_data.get("shipping"), customer, "Shipping")
-    create_contact(billing_data, customer)
+    create_address(billing_data, customer, "Billing", order_data.get("id"))
+    create_address(order_data.get("shipping"), customer, "Shipping", order_data.get("id"))
+    create_contact(billing_data, customer, order_data.get("id"))
 
+    frappe.db.commit()
     return customer
 
 
@@ -60,74 +59,84 @@ def get_uom(sku: str | None, default_uom: str):
     return sku or (default_uom or "Nos")
 
 
-def create_address(raw_data: dict, customer: dict, address_type: str):
-    """Create an address for the customer if it does not exist."""
-    if frappe.db.exists(
-        "Address",
-        {
-            "pincode": raw_data.get("postcode"),
-            "address_line1": raw_data.get("address_1", "Not Provided"),
-            "woocomm_customer_id": customer.woocomm_customer_id,
-            "address_type": address_type,
-        },
-    ):
-        return
+def create_address(raw_data: dict, customer: dict, address_type: str, order_id = None):
+    try:
+        """Create an address for the customer if it does not exist."""
+        if frappe.db.exists(
+            "Address",
+            {
+                "pincode": raw_data.get("postcode"),
+                "address_line1": raw_data.get("address_1", "Not Provided"),
+                "woocomm_customer_id": customer.woocomm_customer_id,
+                "address_type": address_type,
+            },
+        ):
+            return
 
-    address = frappe.new_doc("Address")
-    address.address_title = customer.get("customer_name")
-    address.address_line1 = raw_data.get("address_1", "Not Provided")
-    address.address_line2 = raw_data.get("address_2")
-    address.city = raw_data.get("city", "Not Provided")
-    address.woocomm_customer_id = customer.woocomm_customer_id
-    address.address_type = address_type
-    address.state = raw_data.get("state")
-    address.pincode = raw_data.get("postcode")
-    address.phone = raw_data.get("phone")
-    address.email_id = raw_data.get("email")
+        address = frappe.new_doc("Address")
+        address.address_title = customer.get("customer_name")
+        address.address_line1 = raw_data.get("address_1", "Not Provided")
+        address.address_line2 = raw_data.get("address_2")
+        address.city = raw_data.get("city", "Not Provided")
+        address.woocomm_customer_id = customer.woocomm_customer_id
+        address.address_type = address_type
+        address.state = raw_data.get("state")
+        address.pincode = raw_data.get("postcode")
+        address.phone = raw_data.get("phone")
+        address.email_id = raw_data.get("email")
 
-    if country := raw_data.get("country"):
-        address.country = frappe.db.get_value("Country", {"code": country.lower()})
-    else:
-        address.country = frappe.get_system_settings("country")
+        if country := raw_data.get("country"):
+            address.country = frappe.db.get_value("Country", {"code": country.lower()})
+        else:
+            address.country = frappe.get_system_settings("country")
 
-    address.append("links", {"link_doctype": "Customer", "link_name": customer.name})
-    address.flags.ignore_mandatory = True
-    address.save()
+        address.append("links", {"link_doctype": "Customer", "link_name": customer.name})
+        address.flags.ignore_mandatory = True
+        address.save()
+    except Exception as ex:
+        frappe.log_error(title="create_address:order_creation_utils", 
+                         message=f"""order_id: {order_id}\n\n
+                                    {frappe.get_traceback()}""")
 
 
-def create_contact(data: dict, customer: str):
-    email = data.get("email")
-    phone = data.get("phone")
-    if not email and not phone:
-        return
 
-    if frappe.db.exists(
-        "Contact",
-        {
-            "email_id": email,
-            "woocomm_customer_id": customer.woocomm_customer_id,
-        },
-    ):
-        return
+def create_contact(data: dict, customer: str, order_id = None):
+    try:
+        email = data.get("email")
+        phone = data.get("phone")
+        if not email and not phone:
+            return
 
-    contact = frappe.new_doc("Contact")
-    contact.first_name = data.get("first_name")
-    contact.last_name = data.get("last_name")
-    contact.email_id = email
-    contact.woocomm_customer_id = customer.woocomm_customer_id
-    contact.is_primary_contact = 1
-    contact.is_billing_contact = 1
+        if frappe.db.exists(
+            "Contact",
+            {
+                "email_id": email,
+                "woocomm_customer_id": customer.woocomm_customer_id,
+            },
+        ):
+            return
 
-    if phone:
-        contact.add_phone(phone, is_primary_mobile_no=1, is_primary_phone=1)
+        contact = frappe.new_doc("Contact")
+        contact.first_name = data.get("first_name")
+        contact.last_name = data.get("last_name")
+        contact.email_id = email
+        contact.woocomm_customer_id = customer.woocomm_customer_id
+        contact.is_primary_contact = 1
+        contact.is_billing_contact = 1
 
-    if email:
-        contact.add_email(email, is_primary=1)
+        if phone:
+            contact.add_phone(phone, is_primary_mobile_no=1, is_primary_phone=1)
 
-    contact.append("links", {"link_doctype": "Customer", "link_name": customer.name})
-    contact.flags.ignore_mandatory = True
-    contact.save()
+        if email:
+            contact.add_email(email, is_primary=1)
 
+        contact.append("links", {"link_doctype": "Customer", "link_name": customer.name})
+        contact.flags.ignore_mandatory = True
+        contact.save()
+    except Exception as ex:
+        frappe.log_error(title="create_contact:order_creation_utils", 
+                         message=f"""order_id: {order_id}\n\n
+                                    {frappe.get_traceback()}""")
 
 def create_order(order: dict, woocommerce_setup: dict, customer: str):
     """Create a sales order based on the order data."""
@@ -146,8 +155,14 @@ def create_order(order: dict, woocommerce_setup: dict, customer: str):
     add_items_to_sales_order(order, sales_order, woocommerce_setup)
 
     sales_order.flags.ignore_mandatory = True
-    sales_order.insert()
-    sales_order.submit()
+
+    if sales_order.get("items"):
+        sales_order.insert()
+        sales_order.submit()
+    else:
+        frappe.log_error(title="create_order:order_creation_utils", 
+                         message=f"""order_id: {order.get("id")}, has no items""")
+
 
 
 def add_items_to_sales_order(order: dict, sales_order: dict, setup: dict):
