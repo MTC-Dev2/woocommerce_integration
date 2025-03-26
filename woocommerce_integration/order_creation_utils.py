@@ -15,6 +15,8 @@ def create_sales_order(order_data: dict, setup: dict):
     try:
         customer = create_update_customer(order_data)
         create_order(order_data, setup, customer.name)
+
+        update_address_and_contact_for_customer(customer, order_data)
     except Exception:
         frappe.log_error(
             message=frappe.get_traceback(),
@@ -31,16 +33,19 @@ def create_update_customer(order_data: dict):
 
     # Customer could have been created manually which may differ in naming
     # always check woocomm_customer_id
-    if erp_customer := frappe.db.exists("Customer", {"woocomm_customer_id": customer_id}):
+    if erp_customer := frappe.db.exists("Customer", {"woocomm_customer_id": customer_id, "customer_name": customer_name}):
         customer = frappe.get_doc("Customer", erp_customer)
     else:
         customer = frappe.new_doc("Customer")
-        customer.name = customer_id
+        customer.name = customer_name #customer_id
 
         customer.customer_name = customer_name
         customer.woocomm_customer_id = customer_id
         customer.flags.ignore_mandatory = True
         customer.save()
+    frappe.db.commit()
+
+    return customer
 
     # Create address/contact if does not exist
     create_address(billing_data, customer, "Billing", order_data.get("id"))
@@ -49,6 +54,17 @@ def create_update_customer(order_data: dict):
 
     frappe.db.commit()
     return customer
+
+
+def update_address_and_contact_for_customer(customer, order_data):
+    billing_data = order_data.get("billing")
+    
+    # Create address/contact if does not exist
+    create_address(billing_data, customer, "Billing", order_data.get("id"))
+    create_address(order_data.get("shipping"), customer, "Shipping", order_data.get("id"))
+    create_contact(billing_data, customer, order_data.get("id"))
+
+    frappe.db.commit()
 
 
 def get_uom(sku: str | None, default_uom: str):
