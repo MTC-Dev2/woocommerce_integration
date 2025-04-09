@@ -141,10 +141,26 @@ def create_contact(data: dict, customer: str, order_id = None):
         contact.is_billing_contact = 1
 
         if phone:
+            if customer.get("customer_details"):
+                # customer.customer_details += f"""phone: {phone} \n"""
+                customer.db_set("customer_details", customer.customer_details + f"""\nphone: {phone} \n""")
+            else:
+                # customer.customer_details = f"""phone: {phone} \n"""
+                customer.db_set("customer_details", f"""phone: {phone} \n""")
+
             contact.add_phone(phone, is_primary_mobile_no=1, is_primary_phone=1)
 
         if email:
+            if customer.get("customer_details"):
+                # customer.customer_details +=  f"""email: {email} \n"""
+                customer.db_set("customer_details", customer.customer_details + f"""\nemail: {email} \n""")
+
+            else:
+                # customer.customer_details =  f"""email: {email} \n"""
+                customer.db_set("customer_details", f"""email: {email} \n""")
+            
             contact.add_email(email, is_primary=1)
+        frappe.db.commit()
 
         contact.append("links", {"link_doctype": "Customer", "link_name": customer.name})
         contact.flags.ignore_mandatory = True
@@ -173,49 +189,65 @@ def create_order(order: dict, woocommerce_setup: dict, customer: str):
     sales_order.flags.ignore_mandatory = True
 
     if sales_order.get("items"):
-        sales_order.insert()
-        sales_order.submit()
+        sales_order.insert(ignore_permissions=True)
+        # sales_order.submit()
     else:
-        frappe.log_error(title="create_order:order_creation_utils", 
-                         message=f"""order_id: {order.get("id")}, has no items""")
+        frappe.log_error(title="create_order:order_creation_utils", message=f"""order_id: {order.get("id")}, has no items""")
 
+    frappe.db.commit()
 
 
 def add_items_to_sales_order(order: dict, sales_order: dict, setup: dict):
     """Set the items in the sales order with taxes based on the order data."""
-    for line_item in order.get("line_items") or []:
-        item = get_item(line_item, setup)
+    if not order.get("line_items"):
+        item = get_default_item()
         sales_order.append(
-            "items",
-            {
-                "item_code": item.name,
-                "item_name": item.item_name,
-                "description": item.description,
-                "delivery_date": sales_order.delivery_date,
-                "uom": get_uom(line_item.get("sku"), setup.default_uom),
-                "qty": line_item.get("quantity"),
-                "rate": line_item.get("price"),
-                "warehouse": setup.default_warehouse,
-            },
-        )
-
-        if ordered_items_tax := flt(line_item.get("total_tax")):
-            add_tax_details(
-                sales_order, ordered_items_tax, "Item Tax", setup.tax_account
+                "items",
+                {
+                    "item_code": item.name,
+                    "item_name": item.item_name,
+                    "description": item.description,
+                    "delivery_date": sales_order.delivery_date,
+                    "uom": "Nos",
+                    "qty": 1,
+                    "rate": 0,
+                    "warehouse": setup.default_warehouse,
+                },
+            )
+    else:
+        for line_item in order.get("line_items") or []:
+            item = get_item(line_item, setup)
+            sales_order.append(
+                "items",
+                {
+                    "item_code": item.name,
+                    "item_name": item.item_name,
+                    "description": item.description,
+                    "delivery_date": sales_order.delivery_date,
+                    "uom": get_uom(line_item.get("sku"), setup.default_uom),
+                    "qty": line_item.get("quantity"),
+                    "rate": line_item.get("price"),
+                    "warehouse": setup.default_warehouse,
+                },
             )
 
-    add_tax_details(
-        sales_order,
-        flt(order.get("shipping_tax")),
-        "Shipping Tax",
-        setup.shipping_tax_account,
-    )
-    add_tax_details(
-        sales_order,
-        flt(order.get("shipping_total")),
-        "Shipping Total",
-        setup.shipping_tax_account,
-    )
+            if ordered_items_tax := flt(line_item.get("total_tax")):
+                add_tax_details(
+                    sales_order, ordered_items_tax, "Item Tax", setup.tax_account
+                )
+
+        add_tax_details(
+            sales_order,
+            flt(order.get("shipping_tax")),
+            "Shipping Tax",
+            setup.shipping_tax_account,
+        )
+        add_tax_details(
+            sales_order,
+            flt(order.get("shipping_total")),
+            "Shipping Total",
+            setup.shipping_tax_account,
+        )
 
 
 def get_item(item_data: dict, setup: dict) -> dict:
@@ -242,6 +274,25 @@ def create_item(item_data: dict, woo_com_id: str, setup: dict):
     item.save()
 
     return item
+
+
+def get_default_item():
+    if erp_item := frappe.db.exists("Item", {"item_code": "woocommerce_default_item"}):
+        return frappe.db.get_values("Item", erp_item, ["name", "item_name", "description"], as_dict=True)[0]
+
+    return create_default_item()
+
+def create_default_item():
+    item = frappe.new_doc("Item")
+    item.item_code = "woocommerce_default_item"
+    item.item_name = "woocommerce_default_item"
+    item.stock_uom = "Nos"
+    item.item_group = "WooCommerce Products"
+    item.flags.ignore_mandatory = True
+    item.save()
+
+    return item
+
 
 
 def add_tax_details(sales_order, price, desc, tax_account_head):
