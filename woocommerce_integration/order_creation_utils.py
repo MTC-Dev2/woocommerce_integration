@@ -22,38 +22,43 @@ def create_sales_order(order_data: dict, setup: dict):
             message=frappe.get_traceback(),
             title=_("WooCommerce Error: Creation of Sales Order"),
         )
-        raise
+        # raise
 
 
 def create_update_customer(order_data: dict):
     """Create or update a customer based on the order data."""
-    billing_data = order_data.get("billing")
-    customer_id = order_data.get("customer_id")
-    customer_name = billing_data.get("first_name") + " " + billing_data.get("last_name")
+    try:
+        billing_data = order_data.get("billing")
+        customer_id = order_data.get("customer_id")
+        customer_name = billing_data.get("first_name") + " " + billing_data.get("last_name")
 
-    # Customer could have been created manually which may differ in naming
-    # always check woocomm_customer_id
-    if erp_customer := frappe.db.exists("Customer", {"woocomm_customer_id": customer_id, "customer_name": customer_name}):
-        customer = frappe.get_doc("Customer", erp_customer)
-    else:
-        customer = frappe.new_doc("Customer")
-        customer.name = customer_name #customer_id
+        # Customer could have been created manually which may differ in naming
+        # always check woocomm_customer_id
+        if erp_customer := frappe.db.exists("Customer", {"woocomm_customer_id": customer_id, "customer_name": customer_name}):
+            customer = frappe.get_doc("Customer", erp_customer)
+        else:
+            customer = frappe.new_doc("Customer")
+            customer.name = customer_name #customer_id
 
-        customer.customer_name = customer_name
-        customer.woocomm_customer_id = customer_id
-        customer.flags.ignore_mandatory = True
-        customer.save()
-    frappe.db.commit()
+            customer.customer_name = customer_name
+            customer.woocomm_customer_id = customer_id
 
-    return customer
+            customer.flags.ignore_mandatory = True
+            customer.save()
+        frappe.db.commit()
 
-    # Create address/contact if does not exist
-    create_address(billing_data, customer, "Billing", order_data.get("id"))
-    create_address(order_data.get("shipping"), customer, "Shipping", order_data.get("id"))
-    create_contact(billing_data, customer, order_data.get("id"))
+        return customer
 
-    frappe.db.commit()
-    return customer
+        # Create address/contact if does not exist
+        create_address(billing_data, customer, "Billing", order_data.get("id"))
+        create_address(order_data.get("shipping"), customer, "Shipping", order_data.get("id"))
+        create_contact(billing_data, customer, order_data.get("id"))
+
+        frappe.db.commit()
+        return customer
+    except Exception as ex:
+        frappe.log_error(title="Error create_update_customer:order_creation_utils", message=f"""order_id: {order_data.get("id")}\n\n{frappe.get_traceback()}""")
+
 
 
 def update_address_and_contact_for_customer(customer, order_data):

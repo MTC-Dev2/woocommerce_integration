@@ -55,14 +55,12 @@ def batch_sync_order():
 
     if not setup.enable_order_sync:
         return
-
     last_sync_datetime = None
     for order in get_woocommerce_orders():
         last_sync_datetime = order.get("date_modified")
         # print(f">>>> order: {order} <<<")
         
         create_sales_order(order, setup)
-
     if last_sync_datetime:
         update_woocommerce_sync("last_order_sync", last_sync_datetime)
 
@@ -71,11 +69,13 @@ def get_woocommerce_orders():
     """Get all the new orders from WooCommerce."""
     setup = get_woocommerce_setup()
     woocommerce = WooCommerceConnector(setup)
+
     last_sync_datetime = (
         get_datetime(setup.last_order_sync).isoformat()
         if setup.last_order_sync
         else None
     )
+    
     per_page = cint(setup.order_per_page) or 10
     return woocommerce.get_orders(
         per_page=per_page,
