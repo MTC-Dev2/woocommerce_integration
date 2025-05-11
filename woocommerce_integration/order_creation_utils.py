@@ -269,7 +269,7 @@ def get_item(item_data: dict, setup: dict) -> dict:
 def create_item(item_data: dict, woo_com_id: str, setup: dict):
     """Create an item based on the item data."""
     item = frappe.new_doc("Item")
-    item.item_code = cstr(woo_com_id)
+    item.item_code = item_data.get("sku") if item_data.get("sku") else  cstr(woo_com_id)
     item.item_name = item_data.get("name")
     item.stock_uom = get_uom(item_data.get("sku"), setup.default_uom)
     item.item_group = "WooCommerce Products"
