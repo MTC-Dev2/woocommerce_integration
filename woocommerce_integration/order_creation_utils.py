@@ -258,10 +258,13 @@ def add_items_to_sales_order(order: dict, sales_order: dict, setup: dict):
 def get_item(item_data: dict, setup: dict) -> dict:
     """Get item document or create it if it does not exist."""
     woo_com_id = item_data["product_id"]
-    if erp_item := frappe.db.exists("Item", {"woocomm_product_id": woo_com_id}):
-        return frappe.db.get_values(
-            "Item", erp_item, ["name", "item_name", "description"], as_dict=True
-        )[0]
+    woo_com_item_sku = item_data.get("sku") or None
+    
+    if woo_com_item_sku:
+        if erp_item := frappe.db.exists("Item", {"item_code": woo_com_item_sku}):
+            return frappe.db.get_values(
+                "Item", erp_item, ["name", "item_name", "description"], as_dict=True
+            )[0]
 
     return create_item(item_data, woo_com_id, setup)
 
