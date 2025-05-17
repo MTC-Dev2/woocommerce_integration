@@ -55,6 +55,8 @@ def update_woocommerce_sync(field: str, date_time: str | datetime):
         date_time = get_datetime(date_time)
 
     frappe.db.set_single_value("WooCommerce Setup", field, date_time)
+    frappe.get_cached_doc("WooCommerce Setup").save()
+    frappe.db.commit()
 
 
 def log_woocommerce_error(response: dict):
