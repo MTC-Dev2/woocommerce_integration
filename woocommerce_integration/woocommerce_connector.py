@@ -1,3 +1,4 @@
+import frappe
 from frappe.utils.data import cint
 from woocommerce import API as WCAPI
 
@@ -54,6 +55,11 @@ class WooCommerceConnector:
 
     def batch_update_products(self, product_data: dict):
         response = self._request("POST", "products/batch", data=product_data)
+        if response.json():
+            frappe.log_error(
+                title="Finished batch_update_products:WooCommerceConnector",
+                message= str(response.json())
+            )
         return response.json()
 
     def delete_product(self, id: str):

@@ -53,9 +53,10 @@ def process_request_data() -> Tuple[bool, Optional[dict]]:
 def update_woocommerce_sync(field: str, date_time: str | datetime):
     if isinstance(date_time, str):
         date_time = get_datetime(date_time)
-
-    frappe.db.set_single_value("WooCommerce Setup", field, date_time)
-    frappe.get_cached_doc("WooCommerce Setup").save()
+    
+    woocommerce_setup = get_woocommerce_setup()
+    woocommerce_setup.db_set(field, date_time)
+    woocommerce_setup.save()
     frappe.db.commit()
 
 

@@ -2,8 +2,10 @@ from datetime import datetime
 
 import frappe
 from frappe import _
-from frappe.utils import cstr, flt, add_days, validate_email_address, validate_phone_number
+from frappe.utils import getdate, get_date_str, cstr, flt, add_days, validate_email_address, validate_phone_number
 
+from erpnext.stock.get_item_details import get_item_price
+from frappe.query_builder.functions import IfNull 
 from woocommerce_integration.general_utils import get_woocommerce_setup
 
 
@@ -235,7 +237,10 @@ def create_order(order: dict, woocommerce_setup: dict, customer: str):
             sales_order = frappe.new_doc("Sales Order")
             sales_order.customer = customer
             sales_order.company = woocommerce_setup.default_company
+
             sales_order.po_no = sales_order.woocomm_order_id = order.get("id")
+            sales_order.custom_woocommerce_order_status = order.get("status", "")
+
             sales_order.naming_series = woocommerce_setup.sales_order_series
 
             created_date = datetime.fromisoformat(order.get("date_created")).date()
@@ -280,6 +285,7 @@ def add_items_to_sales_order(order: dict, sales_order: dict, setup: dict):
             line_items = order.get("line_items") or []
             for line_item in line_items:
                 item = get_item(line_item, setup)
+                # item_selling_rate = get_item_selling_rate(item, sales_order.transaction_date)
                 sales_order.append(
                     "items",
                     {
@@ -301,6 +307,27 @@ def add_items_to_sales_order(order: dict, sales_order: dict, setup: dict):
     except Exception:
         frappe.log_error(title="Error add_items_to_sales_order:order_creation_utils", message=frappe.get_traceback())
         # raise
+
+def get_item_selling_rate(item, transaction_date, currency):
+    price_list = None 
+    
+    if price_list := frappe.db.exists("Price List", {"enabled": 1, "currency": currency, "selling": 1}):
+        price_list = frappe.db.get_values("Price List", price_list, ["name"], as_dict=True)[0]
+
+    if price_list:
+        ip = frappe.qb.DocType("Item Price")
+        query = (
+            frappe.qb.from_(ip).select(ip.name, ip.price_list_rate, ip.uom)
+            .where((ip.item_code == item.name) & (ip.price_list == price_list))
+            .orderby(ip.valid_from, order=frappe.qb.desc)
+            .orderby(ip.uom, order=frappe.qb.desc)
+        )
+        query = query.where(
+            (IfNull(ip.valid_from, "2000-01-01") <= get_date_str(transaction_date))
+            & (IfNull(ip.valid_upto, "2500-12-31") >= get_date_str(transaction_date))
+        )
+
+        return query.run()
 
 def get_default_item():
     if erp_item := frappe.db.exists("Item", {"item_code": "woocommerce_default_item"}):

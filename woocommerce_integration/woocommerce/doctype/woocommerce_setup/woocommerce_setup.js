@@ -17,10 +17,9 @@ frappe.ui.form.on("WooCommerce Setup", {
     frm.events.add_button_generate_secret(frm);
     frm.events.add_button_to_sync_stock(frm);
     frm.events.add_button_to_sync_order(frm);
-
-    frm.add_custom_button('Update Last Order Sync', () => {
-      UpdateLastOrderSync(frm);
-    });
+    
+    frm.add_custom_button("Update Last Stock Sync", () => {UpdateLastStockSync(frm);}, "Update Sync Dates");
+    frm.add_custom_button('Update Last Order Sync', () => {UpdateLastOrderSync(frm);}, "Update Sync Dates");
   },
 
   add_button_generate_secret(frm) {
@@ -94,4 +93,32 @@ const UpdateLastOrderSync = function (frm) {
   });
 
   UpdateLastOrderSyncDialog.show();
+}
+
+const UpdateLastStockSync = function (frm) {
+  let UpdateLastStockSyncDialog = new frappe.ui.Dialog({
+    title: 'Update Last Stock Sync',
+    fields: [
+      {
+        label: 'New Last Stock Sync DateTime',
+        fieldname: 'last_stock_sync_datetime',
+        fieldtype: 'Datetime'
+      }
+    ],
+    size: 'small',
+    primary_action_label: 'Submit',
+    primary_action(values) {
+      frm.set_value("last_stock_sync", values.last_stock_sync_datetime);
+      frm.refresh_field("last_stock_sync");
+      frm.save();
+
+      // setTimeout(() => {
+      //   window.location.reload();
+      // }, 2000);
+
+      UpdateLastStockSyncDialog.hide();
+    }
+  });
+
+  UpdateLastStockSyncDialog.show();
 }
