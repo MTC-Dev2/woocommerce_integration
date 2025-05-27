@@ -252,7 +252,9 @@ def create_order(order: dict, woocommerce_setup: dict, customer: str):
             sales_order.flags.ignore_mandatory = True
 
             if sales_order.get("items"):
-                sales_order.insert(ignore_permissions=True)
+                sales_order.save()
+
+                # sales_order.insert(ignore_permissions=True)
                 # sales_order.submit()
             else:
                 frappe.log_error(title=f"""Error no items found for order: {order.get("id")}""", 
@@ -285,7 +287,8 @@ def add_items_to_sales_order(order: dict, sales_order: dict, setup: dict):
             line_items = order.get("line_items") or []
             for line_item in line_items:
                 item = get_item(line_item, setup)
-                # item_selling_rate = get_item_selling_rate(item, sales_order.transaction_date)
+                item_selling_rate = get_item_selling_rate(item, sales_order.transaction_date, order.get("currency"))
+
                 sales_order.append(
                     "items",
                     {
@@ -295,7 +298,7 @@ def add_items_to_sales_order(order: dict, sales_order: dict, setup: dict):
                         "delivery_date": sales_order.delivery_date,
                         "uom": get_uom(line_item.get("sku"), setup.default_uom),
                         "qty": line_item.get("quantity"),
-                        "rate": line_item.get("price"),
+                        "rate": float(item_selling_rate[0][0]) if item_selling_rate else line_item.get("price"),
                         "warehouse": setup.default_warehouse,
                     },
                 )
@@ -308,26 +311,27 @@ def add_items_to_sales_order(order: dict, sales_order: dict, setup: dict):
         frappe.log_error(title="Error add_items_to_sales_order:order_creation_utils", message=frappe.get_traceback())
         # raise
 
-def get_item_selling_rate(item, transaction_date, currency):
-    price_list = None 
+def get_item_selling_rate(item, transaction_date, currency="IQD"):
+    item_selling_rate = price_list_names = None 
     
-    if price_list := frappe.db.exists("Price List", {"enabled": 1, "currency": currency, "selling": 1}):
-        price_list = frappe.db.get_values("Price List", price_list, ["name"], as_dict=True)[0]
+    if frappe.db.exists("Price List", {"enabled": 1, "currency": currency, "selling": 1}):
+        price_list_names = frappe.db.get_values("Price List", {"enabled": 1, "currency": currency, "selling": 1}, ["name"], pluck="name")
 
-    if price_list:
+    if price_list_names:
         ip = frappe.qb.DocType("Item Price")
         query = (
-            frappe.qb.from_(ip).select(ip.name, ip.price_list_rate, ip.uom)
-            .where((ip.item_code == item.name) & (ip.price_list == price_list))
-            .orderby(ip.valid_from, order=frappe.qb.desc)
+            frappe.qb.from_(ip).select(ip.price_list_rate)
+            .where((ip.item_code == item.name) & (ip.price_list.isin(price_list_names)))
+            .orderby(IfNull(ip.valid_from, ip.creation), order=frappe.qb.desc)
             .orderby(ip.uom, order=frappe.qb.desc)
+            .limit(1)
         )
         query = query.where(
-            (IfNull(ip.valid_from, "2000-01-01") <= get_date_str(transaction_date))
+            (IfNull(ip.valid_from, ip.creation) <= get_date_str(transaction_date))
             & (IfNull(ip.valid_upto, "2500-12-31") >= get_date_str(transaction_date))
         )
-
-        return query.run()
+        item_selling_rate = query.run()
+        return item_selling_rate
 
 def get_default_item():
     if erp_item := frappe.db.exists("Item", {"item_code": "woocommerce_default_item"}):
