@@ -289,6 +289,8 @@ def add_items_to_sales_order(order: dict, sales_order: dict, setup: dict):
                 item = get_item(line_item, setup)
                 item_selling_rate = get_item_selling_rate(item, sales_order.transaction_date, order.get("currency"))
 
+                frappe.log_error(f"item_selling_rate: {item_selling_rate[0][0]} for item: {item.name}")
+
                 sales_order.append(
                     "items",
                     {
