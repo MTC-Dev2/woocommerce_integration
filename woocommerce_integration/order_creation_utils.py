@@ -54,6 +54,7 @@ def create_update_customer(order_data: dict):
                 customer.name = customer_name #customer_id
 
                 customer.customer_name = customer_name
+                customer.customer_group = validate_customer_group()
                 if customer_id:
                     customer.woocomm_customer_id = customer_id
 
@@ -87,6 +88,21 @@ def create_default_customer():
     customer.save()
     frappe.db.commit()
     return customer
+
+def validate_customer_group():
+    if woocomm_customer_group := frappe.db.exists("Customer Group", "iCenter E-Commerce"):
+        return frappe.db.get_values("Customer Group", woocomm_customer_group, ["name"], as_dict=True)[0]
+    return create_default_customer_group()
+
+def create_default_customer_group():
+    customer_group = frappe.new_doc("Customer Group")
+    customer_group.item_code = "woocommerce_default_item"
+    customer_group.customer_group_name = "woocommerce_default_item"
+    
+    customer_group.flags.ignore_mandatory = True
+    customer_group.save()
+    return customer_group
+
 
 def create_address(raw_data: dict, customer: dict, address_type: str, order_id = None):
     try:
