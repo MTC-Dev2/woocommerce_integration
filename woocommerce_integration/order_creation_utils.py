@@ -91,13 +91,12 @@ def create_default_customer():
 
 def validate_customer_group():
     if woocomm_customer_group := frappe.db.exists("Customer Group", "iCenter E-Commerce"):
-        return frappe.db.get_values("Customer Group", woocomm_customer_group, ["name"], as_dict=True)[0]
+        return frappe.get_doc("Customer Group", woocomm_customer_group)
     return create_default_customer_group()
 
 def create_default_customer_group():
     customer_group = frappe.new_doc("Customer Group")
-    customer_group.item_code = "woocommerce_default_item"
-    customer_group.customer_group_name = "woocommerce_default_item"
+    customer_group.customer_group_name = "iCenter E-Commerce"
     
     customer_group.flags.ignore_mandatory = True
     customer_group.save()
@@ -304,8 +303,6 @@ def add_items_to_sales_order(order: dict, sales_order: dict, setup: dict):
             for line_item in line_items:
                 item = get_item(line_item, setup)
                 item_selling_rate = get_item_selling_rate(item, sales_order.transaction_date, order.get("currency"))
-
-                frappe.log_error(f"item_selling_rate: {item_selling_rate[0][0]} for item: {item.name}")
 
                 sales_order.append(
                     "items",
