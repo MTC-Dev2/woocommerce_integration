@@ -28,13 +28,14 @@ def create_sales_order(order_data: dict, setup: dict):
 def create_update_customer(order_data: dict):
     """Create or update a customer based on the order data."""
     try:
-        filtrs = {}
         billing_data = order_data.get("billing") or None
         if not billing_data:
             frappe.log_error(title=f"""Error no billing data found for customer with order: {order_data.get("id")}""", 
                             message=f"""Working with woocommerce_default_customer for order_id: {order_data.get("id")}""")
             customer = get_woocommerce_default_customer()
             return customer
+
+        filtrs = {"customer_group": validate_customer_group()}
 
         customer_name = billing_data.get("first_name") + " " + billing_data.get("last_name")
         if customer_name:
@@ -44,8 +45,15 @@ def create_update_customer(order_data: dict):
         if customer_id:
             filtrs["woocomm_customer_id"] = customer_id     
 
+        customer_state = billing_data.get("state")
+        if customer_state:
+            filtrs["territory"] = customer_state   
+
+        customer_email = billing_data.get("email")
+        if customer_email:
+            filtrs["email"] = customer_email   
+
         # Customer could have been created manually which may differ in naming
-        # always check woocomm_customer_id
         if (filtrs) and (erp_customer := frappe.db.exists("Customer", filtrs)):
             customer = frappe.get_doc("Customer", erp_customer)
         else:
@@ -55,6 +63,8 @@ def create_update_customer(order_data: dict):
 
                 customer.customer_name = customer_name
                 customer.customer_group = validate_customer_group()
+                customer.email = billing_data.get("email") or None
+                customer.territory = billing_data.get("state") or None
                 if customer_id:
                     customer.woocomm_customer_id = customer_id
 
@@ -70,6 +80,7 @@ def create_update_customer(order_data: dict):
             else:
                 customer = get_woocommerce_default_customer()
                 return customer
+            
         return customer
     except Exception as ex:
         frappe.log_error(title="Error create_update_customer:order_creation_utils", 
@@ -91,7 +102,7 @@ def create_default_customer():
 
 def validate_customer_group():
     if woocomm_customer_group := frappe.db.exists("Customer Group", "iCenter E-Commerce"):
-        return frappe.get_doc("Customer Group", woocomm_customer_group)
+        return frappe.get_doc("Customer Group", woocomm_customer_group).name
     return create_default_customer_group()
 
 def create_default_customer_group():
@@ -100,7 +111,7 @@ def create_default_customer_group():
     
     customer_group.flags.ignore_mandatory = True
     customer_group.save()
-    return customer_group
+    return customer_group.name
 
 
 def create_address(raw_data: dict, customer: dict, address_type: str, order_id = None):
