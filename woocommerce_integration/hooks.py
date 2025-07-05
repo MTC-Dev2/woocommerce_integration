@@ -160,23 +160,11 @@ woocomm_custom_fields = {
 # Scheduled Tasks
 # ---------------
 
-# scheduler_events = {
-# 	"all": [
-# 		"woocommerce_integration.tasks.all"
-# 	],
-# 	"daily": [
-# 		"woocommerce_integration.tasks.daily"
-# 	],
-# 	"hourly": [
-# 		"woocommerce_integration.tasks.hourly"
-# 	],
-# 	"weekly": [
-# 		"woocommerce_integration.tasks.weekly"
-# 	],
-# 	"monthly": [
-# 		"woocommerce_integration.tasks.monthly"
-# 	],
-# }
+scheduler_events = {
+	"daily": [
+		"woocommerce_integration.woocommerce.sync_utils.enqueue_get_woocommerce_product_ids"
+	]
+}
 
 # Testing
 # -------

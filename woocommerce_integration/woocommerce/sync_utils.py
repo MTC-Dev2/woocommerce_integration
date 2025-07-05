@@ -1,5 +1,5 @@
 import frappe
-from frappe.utils import cint, get_datetime
+from frappe.utils import cint, get_datetime, now
 
 from woocommerce_integration.general_utils import (
     get_woocommerce_setup,
@@ -26,19 +26,18 @@ def batch_sync_stock():
 
     # Get all recent Bins
     data = {"update": []}
-    for row in frappe.get_all(
-        "Bin", filters=filters, fields=["item_code", "actual_qty"]
-    ):
-        if product_id := frappe.db.get_value(
-            "Item", row.item_code, "woocomm_product_id"
-        ):
+    for row in frappe.get_all("Bin", filters=filters, fields=["item_code", "actual_qty"]):
+        # print(f">>>> working with row.item_code: {row.item_code} <<<<<<")
+        if product_id := frappe.db.get_value("Item", row.item_code, "woocomm_product_id"):
+            # product_id = 906
+            # print(f">>>> value of product_id: {product_id} <<<<<<")
             data["update"].append(
-                {
-                    "id": product_id,
-                    "stock_quantity": cint(row.actual_qty),
-                    "manage_stock": True,
-                }
-            )
+                    {
+                        "id": product_id,
+                        "stock_quantity": cint(row.actual_qty),
+                        "manage_stock": True,
+                    }
+                )
 
     # Update stock in WooCommerce
     if data["update"]:
@@ -84,3 +83,48 @@ def get_woocommerce_orders():
         orderby="modified",
         order="asc",
     )
+
+
+def enqueue_get_woocommerce_product_ids():
+    try:
+        frappe.enqueue(method=get_woocommerce_product_ids, queue="long", timeout=1500)
+    except Exception as ex:
+        frappe.log_error(title=f"Error enqueue_get_woocommerce_product_ids:sync_utils", message=frappe.get_traceback())
+
+
+def get_woocommerce_product_ids():
+    try:
+        setup = get_woocommerce_setup()
+        woocommerce = WooCommerceConnector(setup)
+
+        next_page = True
+        page_num = 1
+
+        frappe.log_error(title=f">>>>> start with get_woocommerce_product_ids : {now()} <<<<<", 
+                            message=f">>>>> start with get_woocommerce_product_ids : {now()} <<<<<")
+
+        while next_page:
+            woocomm_items = woocommerce.get_products(page=page_num)
+            if not woocomm_items:
+                next_page = False
+                continue
+
+            for woocomm_item in woocomm_items:
+                # print(f""">>>> woocomm_item.get('id'): {woocomm_item.get("id")}, """)
+                # print(f""">>>> woocomm_item.get('sku'): {woocomm_item.get("sku")}, """)
+                
+                if woocomm_item.get('sku'):
+                    if frappe.db.exists("Item", {"name": woocomm_item.get('sku')}):
+                        item_doc = frappe.get_doc("Item", woocomm_item.get('sku'))    
+                        if not item_doc.get("woocomm_product_id"):
+                            item_doc.woocomm_product_id = woocomm_item.get("id")
+                            item_doc.flags.ignore_mandatory = True
+                            item_doc.save()
+            
+            page_num += 1
+            frappe.db.commit()
+
+        frappe.log_error(title=f">>>>> end of get_woocommerce_product_ids : {now()} <<<<<", 
+                            message=f">>>>> end of get_woocommerce_product_ids : {now()} <<<<<")
+    except Exception as ex:
+        frappe.log_error(title=f"Error get_woocommerce_product_ids:sync_utils", message=frappe.get_traceback())
