@@ -62,6 +62,20 @@ class WooCommerceConnector:
             )
         return response.json()
 
+    def batch_update_variations_products(self, variation_products_data: dict):
+        full_response = ""
+        for product_id in variation_products_data:
+            response = self._request("POST", f"products/{product_id}/variations/batch", data=variation_products_data[product_id])
+            if response.json():
+                full_response += str(response.json()) + "\n"
+        
+        frappe.log_error(
+                title="Finished batch_update_variations_products:WooCommerceConnector",
+                message= full_response
+            )
+        return full_response
+
+
     def delete_product(self, id: str):
         response = self._request("DELETE", f"products/{id}")
         return response.json()

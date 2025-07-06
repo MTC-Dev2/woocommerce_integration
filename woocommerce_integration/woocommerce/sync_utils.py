@@ -25,24 +25,46 @@ def batch_sync_stock():
         filters["modified"] = (">=", setup.last_stock_sync)
 
     # Get all recent Bins
+    variation_products_data = {}
+    variation_data = {"update": []}
     data = {"update": []}
     for row in frappe.get_all("Bin", filters=filters, fields=["item_code", "actual_qty"]):
-        # print(f">>>> working with row.item_code: {row.item_code} <<<<<<")
-        if product_id := frappe.db.get_value("Item", row.item_code, "woocomm_product_id"):
-            # product_id = 906
-            # print(f">>>> value of product_id: {product_id} <<<<<<")
-            data["update"].append(
-                    {
-                        "id": product_id,
-                        "stock_quantity": cint(row.actual_qty),
-                        "manage_stock": True,
-                    }
-                )
+        if frappe.db.exists("Item", {"name": row.item_code}):
+            item_doc = frappe.get_doc("Item", row.item_code)        
+            product_type = item_doc.get("custom_woocommerce_product_type") or None
 
+            if product_type and product_type == "variation":
+                product_parent_id = item_doc.get("custom_woocommerce_parent_product_id") or None
+                product_variation_id = item_doc.get("woocomm_product_id")
+               
+                if product_parent_id and product_variation_id:
+                    variation_data["update"].append(
+                            {
+                                "id": product_variation_id,
+                                "stock_quantity": cint(row.actual_qty),
+                                "manage_stock": True,
+                            }
+                        )
+                    variation_products_data[str(product_parent_id)] = variation_data
+            else:
+                product_id = item_doc.get("woocomm_product_id")
+                if product_id:
+                    data["update"].append(
+                            {
+                                "id": product_id,
+                                "stock_quantity": cint(row.actual_qty),
+                                "manage_stock": True,
+                            }
+                        )
+    
     # Update stock in WooCommerce
     if data["update"]:
         connector = WooCommerceConnector(setup)
         connector.batch_update_products(data)
+        update_woocommerce_sync("last_stock_sync", get_datetime())
+    if variation_products_data:
+        connector = WooCommerceConnector(setup)
+        connector.batch_update_variations_products(variation_products_data)
         update_woocommerce_sync("last_stock_sync", get_datetime())
 
 
@@ -110,17 +132,42 @@ def get_woocommerce_product_ids():
                 continue
 
             for woocomm_item in woocomm_items:
-                # print(f""">>>> woocomm_item.get('id'): {woocomm_item.get("id")}, """)
-                # print(f""">>>> woocomm_item.get('sku'): {woocomm_item.get("sku")}, """)
-                
-                if woocomm_item.get('sku'):
-                    if frappe.db.exists("Item", {"name": woocomm_item.get('sku')}):
-                        item_doc = frappe.get_doc("Item", woocomm_item.get('sku'))    
-                        if not item_doc.get("woocomm_product_id"):
+                product_type = woocomm_item.get("type")
+
+                if product_type == "variation":
+                    if woocomm_item.get('sku') and woocomm_item.get('id') and woocomm_item.get('parent_id'):
+                        if frappe.db.exists("Item", {"name": woocomm_item.get('sku')}):
+                            item_doc = frappe.get_doc("Item", woocomm_item.get('sku'))
+
                             item_doc.woocomm_product_id = woocomm_item.get("id")
+                            item_doc.custom_woocommerce_parent_product_id = woocomm_item.get("parent_id")
+                            item_doc.custom_woocommerce_product_type = product_type
+                            
                             item_doc.flags.ignore_mandatory = True
                             item_doc.save()
-            
+
+                elif product_type == "simple":
+                    if woocomm_item.get('sku') and woocomm_item.get('id'):
+                        if frappe.db.exists("Item", {"name": woocomm_item.get('sku')}):
+                            item_doc = frappe.get_doc("Item", woocomm_item.get('sku'))
+
+                            item_doc.woocomm_product_id = woocomm_item.get("id")
+                            item_doc.custom_woocommerce_product_type = product_type
+                            
+                            item_doc.flags.ignore_mandatory = True
+                            item_doc.save()
+
+                elif product_type == "variable":
+                    if woocomm_item.get('id'):
+                        if frappe.db.exists("Item", {"name": woocomm_item.get('id')}):
+                            item_doc = frappe.get_doc("Item", woocomm_item.get('id'))
+
+                            item_doc.woocomm_product_id = woocomm_item.get("id")
+                            item_doc.custom_woocommerce_product_type = product_type
+                            
+                            item_doc.flags.ignore_mandatory = True
+                            item_doc.save()
+
             page_num += 1
             frappe.db.commit()
 

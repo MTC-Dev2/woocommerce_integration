@@ -37,13 +37,18 @@ def create_update_customer(order_data: dict):
 
         filtrs = {"customer_group": validate_customer_group()}
 
-        customer_name = billing_data.get("first_name") + " " + billing_data.get("last_name")
+        customer_name = str(billing_data.get("first_name") + " " + billing_data.get("last_name")).strip()
+
         if customer_name:
-            filtrs["customer_name"] = customer_name     
-        
+            filtrs["customer_name"] = customer_name
+            
         customer_id = int(order_data.get("customer_id"))
         if customer_id:
             filtrs["woocomm_customer_id"] = customer_id     
+
+        if (not customer_name) and (not customer_id):
+            customer = get_woocommerce_default_customer()
+            return customer                 
 
         customer_state = billing_data.get("state")
         if customer_state:
@@ -64,7 +69,8 @@ def create_update_customer(order_data: dict):
                 customer.customer_name = customer_name
                 customer.customer_group = validate_customer_group()
                 customer.email = billing_data.get("email") or None
-                customer.territory = billing_data.get("state") or None
+                if billing_data.get("state"):
+                    customer.territory = validate_customer_territory(billing_data.get("state"))
                 if customer_id:
                     customer.woocomm_customer_id = customer_id
 
@@ -100,6 +106,7 @@ def create_default_customer():
     frappe.db.commit()
     return customer
 
+
 def validate_customer_group():
     if woocomm_customer_group := frappe.db.exists("Customer Group", "iCenter E-Commerce"):
         return frappe.get_doc("Customer Group", woocomm_customer_group).name
@@ -112,6 +119,21 @@ def create_default_customer_group():
     customer_group.flags.ignore_mandatory = True
     customer_group.save()
     return customer_group.name
+
+
+def validate_customer_territory(customer_territory):
+    if erp_customer_territory := frappe.db.exists("Territory", customer_territory):
+        return frappe.get_doc("Territory", erp_customer_territory).name
+    return create_erp_customer_territory(customer_territory)
+
+def create_erp_customer_territory(customer_territory):
+    erp_customer_territory = frappe.new_doc("Territory")
+    erp_customer_territory.territory_name = customer_territory
+    
+    erp_customer_territory.flags.ignore_mandatory = True
+    erp_customer_territory.save()
+    return erp_customer_territory.name
+
 
 
 def create_address(raw_data: dict, customer: dict, address_type: str, order_id = None):
@@ -377,27 +399,57 @@ def create_default_item():
     return item
 
 def get_item(item_data: dict, setup: dict) -> dict:
-    """Get item document or create it if it does not exist."""
+    """Get item document or create it if it does not exist.
+        Note 3 types of items:
+            * Simple Type: woocomm product id with sku
+            * Variation Type: woocomm product id with sku with parent_id
+            * Simple Type: woocomm product id without sku
+    """
+
     woo_com_id = item_data["product_id"]
     woo_com_item_sku = item_data.get("sku") or None
-    
+    woo_com_item_variation_id = item_data.get("variation_id") or None
+    woo_com_product_type = get_woo_com_product_type(woo_com_id, woo_com_item_sku, woo_com_item_variation_id) 
+
+
     if woo_com_item_sku:
         if erp_item := frappe.db.exists("Item", {"item_code": woo_com_item_sku}):
             return frappe.db.get_values("Item", erp_item, ["name", "item_name", "description"], as_dict=True)[0]
     else:
         if erp_item := frappe.db.exists("Item", {"item_code": woo_com_id}):
             return frappe.db.get_values("Item", erp_item, ["name", "item_name", "description"], as_dict=True)[0]
-    return create_item(item_data, woo_com_id, setup)
+    return create_item(item_data, woo_com_id, setup, woo_com_item_variation_id, woo_com_product_type)
 
-def create_item(item_data: dict, woo_com_id: str, setup: dict):
+
+def get_woo_com_product_type(product_id, sku, variation_id):
+    product_type = None
+
+    if product_id and variation_id and sku:
+        product_type = "variation"
+    elif product_id and (not variation_id) and sku:
+        product_type = "simple"
+    elif product_id and (not variation_id) and (not sku):
+        product_type = "variable"
+
+    return product_type
+
+def create_item(item_data: dict, woo_com_id: str, setup: dict, woo_com_item_variation_id, woo_com_product_type):
     """Create an item based on the item data."""
     item = frappe.new_doc("Item")
     item.item_code = item_data.get("sku") if item_data.get("sku") else cstr(woo_com_id)
+    
     item.item_name = item_data.get("name")
-    item.stock_uom = get_uom(item_data.get("sku"), setup.default_uom)
+    item.stock_uom = setup.default_uom #get_uom(item_data.get("sku"), setup.default_uom)
     item.item_group = "WooCommerce Products"
     item.image = (item_data.get("image") or {}).get("src")
-    item.woocomm_product_id = cstr(woo_com_id)
+    item.custom_woocommerce_product_type = woo_com_product_type
+
+    if woo_com_item_variation_id:
+        item.woocomm_product_id = cstr(woo_com_item_variation_id)
+        item.custom_woocommerce_parent_product_id = cstr(woo_com_id) 
+    else:
+        item.woocomm_product_id = cstr(woo_com_id)
+    
     item.flags.ignore_mandatory = True
     item.save()
 
