@@ -24,11 +24,15 @@ def batch_sync_stock():
     if setup.last_stock_sync:
         filters["modified"] = (">=", setup.last_stock_sync)
 
-    # Get all recent Bins
     variation_products_data = {}
     variation_data = {"update": []}
     data = {"update": []}
-    for row in frappe.get_all("Bin", filters=filters, fields=["item_code", "actual_qty"]):
+
+    # Get all recent stock ledger entry
+    for row in frappe.get_all("Stock Ledger Entry", filters=filters, 
+                              fields=["item_code", "qty_after_transaction"], 
+                              order_by="creation DESC", group_by="item_code"):
+        
         if frappe.db.exists("Item", {"name": row.item_code}):
             item_doc = frappe.get_doc("Item", row.item_code)        
             product_type = item_doc.get("custom_woocommerce_product_type") or None
@@ -41,7 +45,7 @@ def batch_sync_stock():
                     variation_data["update"].append(
                             {
                                 "id": product_variation_id,
-                                "stock_quantity": cint(row.actual_qty),
+                                "stock_quantity": cint(row.qty_after_transaction),
                                 "manage_stock": True,
                             }
                         )
@@ -52,7 +56,7 @@ def batch_sync_stock():
                     data["update"].append(
                             {
                                 "id": product_id,
-                                "stock_quantity": cint(row.actual_qty),
+                                "stock_quantity": cint(row.qty_after_transaction),
                                 "manage_stock": True,
                             }
                         )
