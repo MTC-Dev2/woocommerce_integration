@@ -1,5 +1,5 @@
 import frappe
-from frappe.utils import cint, get_datetime, now
+from frappe.utils import cint, get_datetime, now, get_datetime_str, getdate
 
 from woocommerce_integration.general_utils import (
     get_woocommerce_setup,
@@ -14,80 +14,103 @@ def batch_sync_stock():
     """
     Flow: From ERPNext to WooCommerce.
     Called by the scheduler. Batch update items from all recent stock updates.
+    get 100 itms from Stock Ledger Entry every call.
     """
-    setup = get_woocommerce_setup()
-    setup.check_permission("write")
-    if not setup.enable_stock_sync:
-        return
+    try:
+        setup = get_woocommerce_setup()
+        setup.check_permission("write")
+        if not setup.enable_stock_sync:
+            return
 
-    filters = {"warehouse": setup.warehouse}
-    if setup.last_stock_sync:
-        filters["modified"] = (">=", setup.last_stock_sync)
+        filters = {
+            "warehouse": setup.warehouse,
+            "custom_woocomm_synced": 0,
+            # "modified": (">=", get_datetime_str(getdate()))
+        }
 
-    variation_products_data = {}
-    variation_data = {"update": []}
-    data = {"update": []}
+        if setup.last_stock_sync:
+            filters["modified"] = (">=", get_datetime_str(getdate(setup.last_stock_sync)))
+        else:
+            filters["modified"] = (">=", get_datetime_str(getdate()))
 
-    # Get all recent stock ledger entry
-    for row in frappe.get_all("Stock Ledger Entry", filters=filters, 
-                              fields=["item_code", "qty_after_transaction"], 
-                              order_by="creation DESC", group_by="item_code"):
+        variation_products_data = {}
+        variation_data = {"update": []}
+        data = {"update": []}
+
+        # Get all recent stock ledger entry
+        for row in frappe.get_all("Stock Ledger Entry", filters=filters, 
+                                fields=["name", "item_code", "qty_after_transaction"], 
+                                order_by="creation DESC", group_by="item_code", limit=100):
+            sle_doc = frappe.get_doc("Stock Ledger Entry", row.name)
+
+            if frappe.db.exists("Item", {"name": row.item_code}):
+                item_doc = frappe.get_doc("Item", row.item_code)        
+                product_type = item_doc.get("custom_woocommerce_product_type") or None
+
+                if product_type and product_type == "variation":
+                    product_parent_id = item_doc.get("custom_woocommerce_parent_product_id") or None
+                    product_variation_id = item_doc.get("woocomm_product_id")
+                
+                    if product_parent_id and product_variation_id:
+                        variation_data["update"].append(
+                                {
+                                    "id": product_variation_id,
+                                    "stock_quantity": cint(row.qty_after_transaction),
+                                    "manage_stock": True,
+                                }
+                            )
+                        variation_products_data[str(product_parent_id)] = variation_data
+                        
+                        sle_doc.db_set("custom_woocomm_synced", 1)
+                        frappe.db.commit()
+                else:
+                    product_id = item_doc.get("woocomm_product_id")
+                    if product_id:
+                        data["update"].append(
+                                {
+                                    "id": product_id,
+                                    "stock_quantity": cint(row.qty_after_transaction),
+                                    "manage_stock": True,
+                                }
+                            )
+                        
+                        sle_doc.db_set("custom_woocomm_synced", 1)
+                        frappe.db.commit()
         
-        if frappe.db.exists("Item", {"name": row.item_code}):
-            item_doc = frappe.get_doc("Item", row.item_code)        
-            product_type = item_doc.get("custom_woocommerce_product_type") or None
-
-            if product_type and product_type == "variation":
-                product_parent_id = item_doc.get("custom_woocommerce_parent_product_id") or None
-                product_variation_id = item_doc.get("woocomm_product_id")
-               
-                if product_parent_id and product_variation_id:
-                    variation_data["update"].append(
-                            {
-                                "id": product_variation_id,
-                                "stock_quantity": cint(row.qty_after_transaction),
-                                "manage_stock": True,
-                            }
-                        )
-                    variation_products_data[str(product_parent_id)] = variation_data
-            else:
-                product_id = item_doc.get("woocomm_product_id")
-                if product_id:
-                    data["update"].append(
-                            {
-                                "id": product_id,
-                                "stock_quantity": cint(row.qty_after_transaction),
-                                "manage_stock": True,
-                            }
-                        )
-    
-    # Update stock in WooCommerce
-    if data["update"]:
-        connector = WooCommerceConnector(setup)
-        connector.batch_update_products(data)
-        update_woocommerce_sync("last_stock_sync", get_datetime())
-    if variation_products_data:
-        connector = WooCommerceConnector(setup)
-        connector.batch_update_variations_products(variation_products_data)
-        update_woocommerce_sync("last_stock_sync", get_datetime())
+        # Update stock in WooCommerce
+        if data["update"]:
+            connector = WooCommerceConnector(setup)
+            connector.batch_update_products(data)
+            update_woocommerce_sync("last_stock_sync", get_datetime())
+        if variation_products_data:
+            connector = WooCommerceConnector(setup)
+            connector.batch_update_variations_products(variation_products_data)
+            update_woocommerce_sync("last_stock_sync", get_datetime())
+    except Exception as ex:
+        frappe.log_error(title="Error batch_sync_stock:sync_utils", message=frappe.get_traceback())
+        # raise ex
 
 
 @frappe.whitelist()
 def batch_sync_order():
     """Batch sync orders from WooCommerce to ERPNext."""
-    setup = get_woocommerce_setup()
-    setup.check_permission("write")
+    try:
+        setup = get_woocommerce_setup()
+        setup.check_permission("write")
 
-    if not setup.enable_order_sync:
-        return
-    last_sync_datetime = None
-    for order in get_woocommerce_orders():
-        last_sync_datetime = get_datetime(order.get("date_modified")) if order.get("date_modified") else get_datetime()
-        # print(f">>>> order: {order} <<<")
-        
-        create_sales_order(order, setup)
-    if last_sync_datetime:
-        update_woocommerce_sync("last_order_sync", last_sync_datetime)
+        if not setup.enable_order_sync:
+            return
+        last_sync_datetime = None
+        for order in get_woocommerce_orders():
+            print(f">>>> order: {order} <<<")
+            last_sync_datetime = get_datetime(order.get("date_modified")) if order.get("date_modified") else get_datetime()
+
+            create_sales_order(order, setup)
+        if last_sync_datetime:
+            update_woocommerce_sync("last_order_sync", last_sync_datetime)
+    except Exception as ex:
+        frappe.log_error(title="Error batch_sync_order:sync_utils", message=frappe.get_traceback())
+        # raise ex
 
 
 def get_woocommerce_orders():
