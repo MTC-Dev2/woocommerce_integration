@@ -81,11 +81,11 @@ def batch_sync_stock():
         if data["update"]:
             connector = WooCommerceConnector(setup)
             connector.batch_update_products(data)
-            update_woocommerce_sync("last_stock_sync", get_datetime())
+            # update_woocommerce_sync("last_stock_sync", get_datetime())
         if variation_products_data:
             connector = WooCommerceConnector(setup)
             connector.batch_update_variations_products(variation_products_data)
-            update_woocommerce_sync("last_stock_sync", get_datetime())
+            # update_woocommerce_sync("last_stock_sync", get_datetime())
     except Exception as ex:
         frappe.log_error(title="Error batch_sync_stock:sync_utils", message=frappe.get_traceback())
         # raise ex
