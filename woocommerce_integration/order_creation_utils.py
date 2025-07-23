@@ -360,10 +360,17 @@ def add_items_to_sales_order(order: dict, sales_order: dict, setup: dict):
         # raise
 
 def get_item_selling_rate(item, transaction_date, currency="IQD"):
-    item_selling_rate = price_list_names = None 
+    default_price_list = item_selling_rate = price_list_names = None 
+
+    # read Default Price List from Selling Settings
+    selling_settings_doc = frappe.get_single("Selling Settings")
+    default_price_list = selling_settings_doc.get("selling_price_list")
     
-    if frappe.db.exists("Price List", {"enabled": 1, "currency": currency, "selling": 1}):
-        price_list_names = frappe.db.get_values("Price List", {"enabled": 1, "currency": currency, "selling": 1}, ["name"], pluck="name")
+    if default_price_list:
+        price_list_names = [default_price_list]
+    else:    
+        if frappe.db.exists("Price List", {"enabled": 1, "currency": currency, "selling": 1}):
+            price_list_names = frappe.db.get_values("Price List", {"enabled": 1, "currency": currency, "selling": 1}, ["name"], pluck="name")
 
     if price_list_names:
         ip = frappe.qb.DocType("Item Price")
