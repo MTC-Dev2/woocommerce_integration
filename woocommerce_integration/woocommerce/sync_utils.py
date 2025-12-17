@@ -56,7 +56,7 @@ def batch_sync_stock():
                                 {
                                     "id": product_variation_id,
                                     "stock_quantity": cint(row.qty_after_transaction),
-                                    "manage_stock": True,
+                                    "manage_stock": 1,
                                 }
                             )
                         variation_products_data[str(product_parent_id)] = variation_data
@@ -70,7 +70,7 @@ def batch_sync_stock():
                                 {
                                     "id": product_id,
                                     "stock_quantity": cint(row.qty_after_transaction),
-                                    "manage_stock": True,
+                                    "manage_stock": 1,
                                 }
                             )
                         
