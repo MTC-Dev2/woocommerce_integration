@@ -21,6 +21,10 @@ def batch_sync_stock():
         setup.check_permission("write")
         if not setup.enable_stock_sync:
             return
+        
+        frappe.log_error(title=f">>>>> Start batch_sync_stock: {now()} <<<<<", 
+                         message=f">>>>> Start batch_sync_stock: {now()} <<<<<")
+
 
         filters = {
             "warehouse": setup.warehouse,
@@ -86,10 +90,12 @@ def batch_sync_stock():
             connector = WooCommerceConnector(setup)
             connector.batch_update_variations_products(variation_products_data)
             # update_woocommerce_sync("last_stock_sync", get_datetime())
+
+        frappe.log_error(title=f">>>>> End batch_sync_stock: {now()} <<<<<", 
+                         message=f">>>>> End batch_sync_stock: {now()} <<<<<")
     except Exception as ex:
         frappe.log_error(title="Error batch_sync_stock:sync_utils", message=frappe.get_traceback())
         # raise ex
-
 
 @frappe.whitelist()
 def batch_sync_order():
@@ -100,6 +106,10 @@ def batch_sync_order():
 
         if not setup.enable_order_sync:
             return
+
+        frappe.log_error(title=f">>>>> Start batch_sync_order: {now()} <<<<<", 
+                         message=f">>>>> Start batch_sync_order: {now()} <<<<<")
+
         last_sync_datetime = None
         for order in get_woocommerce_orders():
             last_sync_datetime = get_datetime(order.get("date_modified")) if order.get("date_modified") else get_datetime()
@@ -107,10 +117,12 @@ def batch_sync_order():
             create_sales_order(order, setup)
         if last_sync_datetime:
             update_woocommerce_sync("last_order_sync", last_sync_datetime)
+
+        frappe.log_error(title=f">>>>> End batch_sync_order: {now()} <<<<<", 
+                         message=f">>>>> End batch_sync_order: {now()} <<<<<")
     except Exception as ex:
         frappe.log_error(title="Error batch_sync_order:sync_utils", message=frappe.get_traceback())
         # raise ex
-
 
 def get_woocommerce_orders():
     """Get all the new orders from WooCommerce."""
@@ -132,24 +144,21 @@ def get_woocommerce_orders():
         order="asc",
     )
 
-
 def enqueue_get_woocommerce_product_ids():
     try:
         frappe.enqueue(method=get_woocommerce_product_ids, queue="long", timeout=1500)
     except Exception as ex:
         frappe.log_error(title=f"Error enqueue_get_woocommerce_product_ids:sync_utils", message=frappe.get_traceback())
 
-
 def get_woocommerce_product_ids():
     try:
         setup = get_woocommerce_setup()
         woocommerce = WooCommerceConnector(setup)
-
         next_page = True
         page_num = 1
 
-        frappe.log_error(title=f">>>>> start with get_woocommerce_product_ids : {now()} <<<<<", 
-                            message=f">>>>> start with get_woocommerce_product_ids : {now()} <<<<<")
+        frappe.log_error(title=f">>>>> Start get_woocommerce_product_ids: {now()} <<<<<", 
+                         message=f">>>>> Start get_woocommerce_product_ids: {now()} <<<<<")
 
         while next_page:
             woocomm_items = woocommerce.get_products(page=page_num)
@@ -159,7 +168,6 @@ def get_woocommerce_product_ids():
 
             for woocomm_item in woocomm_items:
                 product_type = woocomm_item.get("type")
-
                 if product_type == "variation":
                     if woocomm_item.get('sku') and woocomm_item.get('id') and woocomm_item.get('parent_id'):
                         if frappe.db.exists("Item", {"name": woocomm_item.get('sku')}):
@@ -171,7 +179,6 @@ def get_woocommerce_product_ids():
                             
                             item_doc.flags.ignore_mandatory = True
                             item_doc.save()
-
                 elif product_type == "simple":
                     if woocomm_item.get('sku') and woocomm_item.get('id'):
                         if frappe.db.exists("Item", {"name": woocomm_item.get('sku')}):
@@ -182,7 +189,6 @@ def get_woocommerce_product_ids():
                             
                             item_doc.flags.ignore_mandatory = True
                             item_doc.save()
-
                 elif product_type == "variable":
                     if woocomm_item.get('id'):
                         if frappe.db.exists("Item", {"name": woocomm_item.get('id')}):
@@ -197,7 +203,7 @@ def get_woocommerce_product_ids():
             page_num += 1
             frappe.db.commit()
 
-        frappe.log_error(title=f">>>>> end of get_woocommerce_product_ids : {now()} <<<<<", 
-                            message=f">>>>> end of get_woocommerce_product_ids : {now()} <<<<<")
+        frappe.log_error(title=f">>>>> End get_woocommerce_product_ids: {now()} <<<<<", 
+                         message=f">>>>> End get_woocommerce_product_ids: {now()} <<<<<")
     except Exception as ex:
         frappe.log_error(title=f"Error get_woocommerce_product_ids:sync_utils", message=frappe.get_traceback())

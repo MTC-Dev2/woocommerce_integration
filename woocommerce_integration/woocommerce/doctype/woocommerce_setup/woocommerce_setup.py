@@ -86,7 +86,7 @@ class WooCommerceSetup(Document):
                 )
             )
 
-        server_script.disabled = not self.get(sync_switch)
+        server_script.disabled = True #not self.get(sync_switch)
         frequency = self.get(frequency_field) if frequency_field else "Minutes"
         # Set the frequency in the script
         server_script.update(
