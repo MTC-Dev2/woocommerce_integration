@@ -9,6 +9,12 @@ from woocommerce_integration.order_creation_utils import create_sales_order
 from woocommerce_integration.woocommerce_connector import WooCommerceConnector
 
 
+def enqueue_batch_sync_stock():
+    try:
+        frappe.enqueue(method=batch_sync_stock, queue="short", timeout=1500)
+    except Exception as ex:
+        frappe.log_error(title=f"Error enqueue_batch_sync_stock:sync_utils", message=frappe.get_traceback())
+
 @frappe.whitelist()
 def batch_sync_stock():
     """
@@ -20,18 +26,14 @@ def batch_sync_stock():
         setup = get_woocommerce_setup()
         setup.check_permission("write")
         if not setup.enable_stock_sync:
-            return
-        
+            return        
         frappe.log_error(title=f">>>>> Start batch_sync_stock: {now()} <<<<<", 
                          message=f">>>>> Start batch_sync_stock: {now()} <<<<<")
 
-
         filters = {
             "warehouse": setup.warehouse,
-            "custom_woocomm_synced": 0,
-            # "modified": (">=", get_datetime_str(getdate()))
+            "custom_woocomm_synced": 0
         }
-
         if setup.last_stock_sync:
             filters["modified"] = (">=", get_datetime_str(getdate(setup.last_stock_sync)))
         else:
@@ -42,9 +44,15 @@ def batch_sync_stock():
         data = {"update": []}
 
         # Get all recent stock ledger entry
-        for row in frappe.get_all("Stock Ledger Entry", filters=filters, 
-                                fields=["name", "item_code", "qty_after_transaction"], 
-                                order_by="creation DESC", group_by="item_code", limit=100):
+        sle_docs = frappe.get_all("Stock Ledger Entry", filters=filters, 
+                                  fields=["name", "item_code", "qty_after_transaction"], 
+                                  order_by="creation DESC", group_by="item_code", limit=100)
+        if not sle_docs:
+            frappe.log_error(title=f">>>>> End batch_sync_stock (No SLE docs): {now()} <<<<<", 
+                             message=f">>>>> End batch_sync_stock (No Stock Ledger Entry docs found): {now()} <<<<<")
+            return
+        
+        for row in sle_docs:
             sle_doc = frappe.get_doc("Stock Ledger Entry", row.name)
 
             if frappe.db.exists("Item", {"name": row.item_code}):

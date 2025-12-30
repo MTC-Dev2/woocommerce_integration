@@ -162,10 +162,8 @@ woocomm_custom_fields = {
 
 scheduler_events = {
     "cron":{
-        "0/5 * * * *": [
-            "woocommerce_integration.woocommerce.sync_utils.batch_sync_stock",
-            "woocommerce_integration.woocommerce.sync_utils.batch_sync_order"
-        ],
+        "0/5 * * * *": ["woocommerce_integration.woocommerce.sync_utils.batch_sync_order"],
+        "0/7 * * * *": ["woocommerce_integration.woocommerce.sync_utils.enqueue_batch_sync_stock"],
     },
 	"daily": [
 		"woocommerce_integration.woocommerce.sync_utils.enqueue_get_woocommerce_product_ids"
