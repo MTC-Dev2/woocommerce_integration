@@ -54,26 +54,33 @@ class WooCommerceConnector:
         return response.json()
 
     def batch_update_products(self, product_data: dict):
-        response = self._request("POST", "products/batch", data=product_data)
-        if response.json():
-            frappe.log_error(
-                title="Finished batch_update_products:WooCommerceConnector",
-                message= str(response.json())
-            )
-        return response.json()
+        try:
+            response = self._request("POST", "products/batch", data=product_data)
+            frappe.log_error(title="Response batch_update_products:WooCommerceConnector", 
+                             message=f"Response:\n{str(response.json())}")
+
+            if response.json():
+                frappe.log_error(title="Finished batch_update_products:WooCommerceConnector", message=str(response.json()))
+            return response.json()
+        except Exception as ex:
+            frappe.log_error(title="Error batch_update_products:WooCommerceConnector", message=frappe.get_traceback())
 
     def batch_update_variations_products(self, variation_products_data: dict):
-        full_response = ""
-        for product_id in variation_products_data:
-            response = self._request("POST", f"products/{product_id}/variations/batch", data=variation_products_data[product_id])
-            if response.json():
-                full_response += str(response.json()) + "\n"
-        
-        frappe.log_error(
-                title="Finished batch_update_variations_products:WooCommerceConnector",
-                message= full_response
-            )
-        return full_response
+        try:
+            full_response = ""
+            for product_id in variation_products_data:
+                response = self._request("POST", f"products/{product_id}/variations/batch", data=variation_products_data[product_id])
+                frappe.log_error(title="Response batch_update_variations_products:WooCommerceConnector", 
+                             message=f"Response:\n{str(response.json())}")
+
+                if response.json():
+                    full_response += str(response.json()) + "\n"
+            
+            frappe.log_error(title="Finished batch_update_variations_products:WooCommerceConnector", message=full_response)
+            return full_response
+        except Exception as ex:
+            frappe.log_error(title="Error batch_update_variations_products:WooCommerceConnector", message=frappe.get_traceback())
+
 
 
     def delete_product(self, id: str):

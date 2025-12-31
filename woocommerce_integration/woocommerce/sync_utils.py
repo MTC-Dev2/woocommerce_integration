@@ -23,12 +23,12 @@ def batch_sync_stock():
     get 100 itms from Stock Ledger Entry every call.
     """
     try:
+        data_to_return = {}
         setup = get_woocommerce_setup()
         setup.check_permission("write")
         if not setup.enable_stock_sync:
             return        
-        frappe.log_error(title=f">>>>> Start batch_sync_stock: {now()} <<<<<", 
-                         message=f">>>>> Start batch_sync_stock: {now()} <<<<<")
+        frappe.log_error(title=f">>>>> Start batch_sync_stock: {now()} <<<<<", message=f">>>>> Start batch_sync_stock: {now()} <<<<<")
 
         filters = {
             "warehouse": setup.warehouse,
@@ -38,6 +38,8 @@ def batch_sync_stock():
             filters["modified"] = (">=", get_datetime_str(getdate(setup.last_stock_sync)))
         else:
             filters["modified"] = (">=", get_datetime_str(getdate()))
+        
+        data_to_return["filters"] = filters
 
         variation_products_data = {}
         variation_data = {"update": []}
@@ -52,6 +54,8 @@ def batch_sync_stock():
                              message=f">>>>> End batch_sync_stock (No Stock Ledger Entry docs found): {now()} <<<<<")
             return
         
+        data_to_return["sle_docs"] = sle_docs
+
         for row in sle_docs:
             sle_doc = frappe.get_doc("Stock Ledger Entry", row.name)
 
@@ -91,16 +95,23 @@ def batch_sync_stock():
         
         # Update stock in WooCommerce
         if data["update"]:
+        
+            data_to_return["data_update"] = data
+        
             connector = WooCommerceConnector(setup)
             connector.batch_update_products(data)
             # update_woocommerce_sync("last_stock_sync", get_datetime())
         if variation_products_data:
+
+            data_to_return["variation_products_data"] = variation_products_data
+
             connector = WooCommerceConnector(setup)
             connector.batch_update_variations_products(variation_products_data)
             # update_woocommerce_sync("last_stock_sync", get_datetime())
 
-        frappe.log_error(title=f">>>>> End batch_sync_stock: {now()} <<<<<", 
-                         message=f">>>>> End batch_sync_stock: {now()} <<<<<")
+        frappe.log_error(title=f">>>>> End batch_sync_stock: {now()} <<<<<", message=f">>>>> End batch_sync_stock: {now()} <<<<<")
+
+        return data_to_return
     except Exception as ex:
         frappe.log_error(title="Error batch_sync_stock:sync_utils", message=frappe.get_traceback())
         # raise ex
