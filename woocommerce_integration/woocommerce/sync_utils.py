@@ -30,25 +30,49 @@ def batch_sync_stock():
             return        
         frappe.log_error(title=f">>>>> Start batch_sync_stock: {now()} <<<<<", message=f">>>>> Start batch_sync_stock: {now()} <<<<<")
 
-        filters = {
-            "warehouse": setup.warehouse,
-            "custom_woocomm_synced": 0
-        }
+        # filters = {
+        #     "warehouse": setup.warehouse,
+        #     "custom_woocomm_synced": 0
+        # }
         if setup.last_stock_sync:
-            filters["modified"] = (">=", get_datetime_str(getdate(setup.last_stock_sync)))
+            date_filter = get_datetime_str(getdate(setup.last_stock_sync))
+            # filters["modified"] = (">=", get_datetime_str(getdate(setup.last_stock_sync)))
         else:
-            filters["modified"] = (">=", get_datetime_str(getdate()))
-        
-        data_to_return["filters"] = filters
+            date_filter = get_datetime_str(getdate())
+            # filters["modified"] = (">=", get_datetime_str(getdate()))
 
         variation_products_data = {}
         variation_data = {"update": []}
         data = {"update": []}
 
         # Get all recent stock ledger entry
-        sle_docs = frappe.get_all("Stock Ledger Entry", filters=filters, 
-                                  fields=["name", "item_code", "qty_after_transaction"], 
-                                  order_by="creation DESC", group_by="item_code", limit=100)
+        # sle_docs = frappe.get_all("Stock Ledger Entry", filters=filters, 
+        #                           fields=["name", "item_code", "qty_after_transaction"], 
+        #                           order_by="creation DESC", group_by="item_code", limit=100)
+        
+        sle_docs = frappe.db.sql(f"""SELECT 
+                                            SLE.name as name, 
+                                            SLE.item_code as item_code, 
+                                            SLE.qty_after_transaction as qty_after_transaction
+    
+                                    FROM `tabStock Ledger Entry` SLE
+                                    INNER JOIN `tabItem` ITM ON ITM.name = SLE.item_code
+
+                                    INNER JOIN ( SELECT item_code, MAX(creation) AS max_creation
+                                        FROM `tabStock Ledger Entry`
+                                        WHERE warehouse = '{setup.warehouse}'
+                                        AND custom_woocomm_synced = 0
+                                        AND modified >= '{date_filter}'
+                                        GROUP BY item_code
+                                    ) latest ON latest.item_code = SLE.item_code AND latest.max_creation = SLE.creation
+
+                                    WHERE
+                                        ITM.custom_woocommerce_product_type IS NOT NULL
+                                        OR ITM.woocomm_product_id IS NOT NULL
+                                        OR ITM.custom_woocommerce_parent_product_id IS NOT NULL
+                                    ORDER BY SLE.creation DESC
+                                    LIMIT 100; """, as_dict=1, debug=1) 
+
         if not sle_docs:
             frappe.log_error(title=f">>>>> End batch_sync_stock (No SLE docs): {now()} <<<<<", 
                              message=f">>>>> End batch_sync_stock (No Stock Ledger Entry docs found): {now()} <<<<<")
