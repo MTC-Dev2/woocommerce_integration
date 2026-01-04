@@ -144,6 +144,7 @@ def batch_sync_stock():
 def reset_woocomm_synced_flag():
     try:
         frappe.db.sql("UPDATE `tabStock Ledger Entry` SET custom_woocomm_synced = 0")
+        frappe.db.commit()
         return frappe.db.count("Stock Ledger Entry", {"custom_woocomm_synced": 1})
     except Exception as ex:
         frappe.log_error(title="Error reset_woocommerce_sync:sync_utils", message=frappe.get_traceback())
