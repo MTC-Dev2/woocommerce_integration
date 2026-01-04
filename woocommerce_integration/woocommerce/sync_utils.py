@@ -62,7 +62,7 @@ def batch_sync_stock():
                                         FROM `tabStock Ledger Entry`
                                         WHERE warehouse = '{setup.warehouse}'
                                         AND custom_woocomm_synced = 0
-                                        AND modified >= '{date_filter}'
+                                        AND posting_date >= '{date_filter}'
                                         GROUP BY item_code
                                     ) latest ON latest.item_code = SLE.item_code AND latest.max_creation = SLE.creation
 
@@ -70,7 +70,7 @@ def batch_sync_stock():
                                         ITM.custom_woocommerce_product_type IS NOT NULL
                                         OR ITM.woocomm_product_id IS NOT NULL
                                         OR ITM.custom_woocommerce_parent_product_id IS NOT NULL
-                                    ORDER BY SLE.creation DESC
+                                    ORDER BY SLE.posting_date DESC
                                     LIMIT 100; """, as_dict=1, debug=1) 
 
         if not sle_docs:
@@ -138,6 +138,15 @@ def batch_sync_stock():
         return data_to_return
     except Exception as ex:
         frappe.log_error(title="Error batch_sync_stock:sync_utils", message=frappe.get_traceback())
+        # raise ex
+
+@frappe.whitelist()
+def reset_woocomm_synced_flag():
+    try:
+        frappe.db.sql("UPDATE `tabStock Ledger Entry` SET custom_woocomm_synced = 0")
+        return frappe.db.count("Stock Ledger Entry", {"custom_woocomm_synced": 1})
+    except Exception as ex:
+        frappe.log_error(title="Error reset_woocommerce_sync:sync_utils", message=frappe.get_traceback())
         # raise ex
 
 @frappe.whitelist()
