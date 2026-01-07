@@ -61,15 +61,17 @@ def batch_sync_stock():
                                     INNER JOIN ( SELECT item_code, MAX(creation) AS max_creation
                                         FROM `tabStock Ledger Entry`
                                         WHERE warehouse = '{setup.warehouse}'
-                                        AND custom_woocomm_synced = 0
                                         AND posting_date >= '{date_filter}'
                                         GROUP BY item_code
                                     ) latest ON latest.item_code = SLE.item_code AND latest.max_creation = SLE.creation
 
                                     WHERE
-                                        ITM.custom_woocommerce_product_type IS NOT NULL
-                                        OR ITM.woocomm_product_id IS NOT NULL
-                                        OR ITM.custom_woocommerce_parent_product_id IS NOT NULL
+                                        SLE.custom_woocomm_synced = 0
+                                        AND (
+                                            ITM.custom_woocommerce_product_type IS NOT NULL
+                                            OR ITM.woocomm_product_id IS NOT NULL
+                                            OR ITM.custom_woocommerce_parent_product_id IS NOT NULL
+                                        )
                                     ORDER BY SLE.posting_date DESC
                                     LIMIT 100; """, as_dict=1, debug=1) 
 
